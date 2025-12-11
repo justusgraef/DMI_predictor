@@ -127,3 +127,14 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Root-level data copies (use data/ directory instead)
+/20220311_elm_classes.tsv
+/20220311_elm_interaction_domains_complete.tsv
+/all_pfam_domains_with_frequency.txt
+/all_smart_domains_with_frequency.txt
+/final_PRS_RRSv4_3_used_to_fit_model.tsv
+/final_RF_model_with_RRSv4_3.joblib
+/final_median_imputer_with_RRSv4_3.joblib
+/interpro_9606_pfam_matches_20210122.json
+/interpro_9606_smart_matches_20210122.json
