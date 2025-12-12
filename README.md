@@ -163,24 +163,6 @@ These scripts are preserved for:
 - Validation and benchmarking
 - Reference for understanding algorithms
 
-## Troubleshooting
-
-**Missing data files?**
-```bash
-dmi-predict check-data  # Check which files are missing
-```
-
-**Invalid FASTA file?**
-```bash
-dmi-predict validate-fasta --fasta-file proteins.fasta --verbose
-```
-
-**Invalid PPI file?**
-```bash
-dmi-predict validate-ppi --ppi-file interactions.tsv --verbose
-```
-
-See [USAGE.md](USAGE.md) for comprehensive troubleshooting guide.
 
 ## Requirements
 
@@ -196,15 +178,9 @@ See `requirements.txt` for full list.
 
 Original work:
 ```
-[Original citation - add reference to Chop Yan Lee et al.]
+[Original citation - add reference to preprint]
 ```
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) file
-
-## Authors
-
-- Chop Yan Lee (Original developer)
-- Justus Graef (Original developer)
-- [Additional contributors]
