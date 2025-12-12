@@ -17,7 +17,7 @@ DMI Predictor automates the prediction of functional domain-motif interactions i
 ### Installation
 
 ```bash
-git clone https://github.com/lagelab/DMI_predictor.git
+git clone https://github.com/justusgraef/DMI_predictor.git
 cd DMI_predictor
 pip install -e .
 
