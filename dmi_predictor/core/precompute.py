@@ -7,6 +7,7 @@ Requires AIUPred (deep learning) or IUPred2A for disorder prediction.
 from pathlib import Path
 from typing import Optional, List, Tuple
 import json
+import concurrent.futures
 
 from dmi_predictor.config import DMIPredictorConfig
 
@@ -23,6 +24,131 @@ try:
     HAS_IUPRED2A = True
 except ImportError:
     HAS_IUPRED2A = False
+
+
+def _domain_overlap_scores(
+    protein_id: str,
+    seq_len: int,
+    smart_domain_matches,
+    pfam_domain_matches,
+    motif_disordered_hmms,
+):
+    """Compute binary domain overlap vector using provided SMART/Pfam matches."""
+    if smart_domain_matches is None and pfam_domain_matches is None:
+        return None
+    scores = [0] * seq_len
+
+    def apply_matches(db_obj):
+        try:
+            for result in db_obj.get('results', []):
+                if result.get('metadata', {}).get('accession') == protein_id:
+                    for entry in result.get('entry_subset', []):
+                        entry_accession = entry.get('accession', '')
+                        # Skip if this HMM is marked as Motif/Disordered
+                        if entry_accession in motif_disordered_hmms:
+                            if motif_disordered_hmms[entry_accession] != 'Motif':
+                                # It's Disordered (Pfam) or Motif (SMART), skip
+                                continue
+                        for loc in entry.get('entry_protein_locations', []):
+                            for frag in loc.get('fragments', []):
+                                start = int(frag.get('start', 1))
+                                end = int(frag.get('end', 0))
+                                if start < 1:
+                                    start = 1
+                                if end > seq_len:
+                                    end = seq_len
+                                for i in range(start - 1, end):
+                                    scores[i] = 1
+        except Exception:
+            pass
+
+    if smart_domain_matches is not None:
+        apply_matches(smart_domain_matches)
+    if pfam_domain_matches is not None:
+        apply_matches(pfam_domain_matches)
+    return scores
+
+
+def _process_protein_task(args):
+    (
+        protein_id,
+        sequence,
+        iupred_backend,
+        allow_missing_aiupred,
+        force_cpu,
+        verbose,
+        iupred_dir,
+        anchor_dir,
+        domain_overlap_dir,
+        smart_domain_matches,
+        pfam_domain_matches,
+        motif_disordered_hmms,
+    ) = args
+
+    # Compute disorder/anchor
+    if iupred_backend == "aiupred":
+        if not HAS_AIUPRED:
+            if not allow_missing_aiupred:
+                raise RuntimeError(
+                    "AIUPred backend selected but AIUPred is not installed. Use --allow-missing-aiupred to skip"
+                )
+            if verbose:
+                print(f"[{protein_id}] AIUPred missing; skipping disorder features")
+        else:
+            embedding_model, regression_model, device = aiupred_lib.init_models('disorder', force_cpu=force_cpu)
+            iupred_short = aiupred_lib.predict_disorder(
+                sequence, embedding_model, regression_model, device, smoothing=True
+            )
+            with open(iupred_dir / f"{protein_id}_iupredshort.txt", "w") as f:
+                f.write(f"{protein_id}\n")
+                for i, score in enumerate(iupred_short):
+                    f.write(f"{i+1}\t{sequence[i]}\t{score}\n")
+            if verbose:
+                print(f"[{protein_id}] AIUPred features written")
+
+    elif iupred_backend == "iupred2a":
+        if not HAS_IUPRED2A:
+            raise RuntimeError(
+                "IUPred2A backend selected but iupred2a_lib not available. Ensure iupred2a_lib is importable."
+            )
+        result_iupredshort = iupred2a_lib.iupred(sequence, mode='short')[0]
+        with open(iupred_dir / f"{protein_id}_iupredshort.txt", "w") as f:
+            f.write(f"{protein_id}\n")
+            for pos, residue in enumerate(sequence):
+                f.write(f"{pos+1}\t{residue}\t{result_iupredshort[pos]}\n")
+
+        result_anchor = iupred2a_lib.anchor2(sequence)
+        with open(anchor_dir / f"{protein_id}_anchor.txt", "w") as f:
+            f.write(f"{protein_id}\n")
+            for pos, residue in enumerate(sequence):
+                f.write(f"{pos+1}\t{residue}\t{result_anchor[pos]}\n")
+
+        if verbose:
+            print(f"[{protein_id}] IUPred2A + Anchor written")
+
+    else:
+        raise ValueError(f"Unknown iupred_backend: {iupred_backend}")
+
+    # Domain overlap
+    dom_scores = _domain_overlap_scores(
+        protein_id,
+        len(sequence),
+        smart_domain_matches,
+        pfam_domain_matches,
+        motif_disordered_hmms,
+    )
+    if dom_scores is not None:
+        with open(domain_overlap_dir / f"{protein_id}_domain_overlap.txt", "w") as f:
+            f.write(f"{protein_id}\n")
+            for pos, residue in enumerate(sequence):
+                f.write(f"{pos+1}\t{residue}\t{dom_scores[pos]}\n")
+        if verbose:
+            print(f"[{protein_id}] DomainOverlap written")
+    else:
+        if verbose:
+            print(f"[{protein_id}] SMART/Pfam domain JSONs not found — DomainOverlap will be imputed downstream.")
+
+    return protein_id
 
 
 def _load_fasta_from_dir(fasta_dir: Path) -> List[Tuple[str, str]]:
@@ -75,6 +201,7 @@ def precompute_features(
     allow_missing_aiupred: bool = False,
     write_placeholders: bool = False,
     iupred_backend: str = "aiupred",
+    num_workers: int = 1,
 ) -> None:
     if (fasta_dir is None and fasta_file is None) or (fasta_dir and fasta_file):
         print("Provide exactly one of --fasta-dir or --fasta-file")
@@ -117,45 +244,6 @@ def precompute_features(
         except Exception:
             motif_disordered_hmms = {}
 
-    def _compute_domain_overlap(protein_id: str, seq_len: int) -> Optional[List[int]]:
-        """Compute binary domain overlap vector using SMART/Pfam InterPro matches.
-
-        Marks residues overlapping domain fragments, excluding those in motif_disordered_hmms
-        (SMART "Motif", Pfam "Disordered" HMMs are not treated as domains).
-        """
-        if smart_domain_matches is None and pfam_domain_matches is None:
-            return None
-        scores = [0] * seq_len
-        def apply_matches(db_obj):
-            try:
-                for result in db_obj.get('results', []):
-                    if result.get('metadata', {}).get('accession') == protein_id:
-                        for entry in result.get('entry_subset', []):
-                            entry_accession = entry.get('accession', '')
-                            # Skip if this HMM is marked as Motif/Disordered
-                            if entry_accession in motif_disordered_hmms:
-                                if motif_disordered_hmms[entry_accession] != 'Motif':
-                                    # It's Disordered (Pfam) or Motif (SMART), skip
-                                    continue
-                            for loc in entry.get('entry_protein_locations', []):
-                                for frag in loc.get('fragments', []):
-                                    start = int(frag.get('start', 1))
-                                    end = int(frag.get('end', 0))
-                                    if start < 1:
-                                        start = 1
-                                    if end > seq_len:
-                                        end = seq_len
-                                    # mark inclusive range
-                                    for i in range(start - 1, end):
-                                        scores[i] = 1
-            except Exception:
-                pass
-        if smart_domain_matches is not None:
-            apply_matches(smart_domain_matches)
-        if pfam_domain_matches is not None:
-            apply_matches(pfam_domain_matches)
-        return scores
-
     if fasta_dir:
         sequences = _load_fasta_from_dir(Path(fasta_dir))
     else:
@@ -164,11 +252,7 @@ def precompute_features(
         print("No FASTA sequences found")
         return
     
-    # AIUPred handling: be explicit and safe
-    embedding_model = None
-    regression_model = None
-    device = None
-
+    # AIUPred availability check (models are initialized per worker)
     if iupred_backend == "aiupred":
         if not HAS_AIUPRED:
             msg = (
@@ -185,16 +269,6 @@ def precompute_features(
             else:
                 if verbose:
                     print("AIUPred not found; skipping disorder feature computation (features will be left missing)")
-        else:
-            # Initialize AIUPred models
-            try:
-                if verbose:
-                    print("Loading AIUPred models...")
-                embedding_model, regression_model, device = aiupred_lib.init_models(
-                    'disorder', force_cpu=force_cpu
-                )
-            except Exception as e:
-                raise RuntimeError(f"Could not initialize AIUPred: {e}")
     
     elif iupred_backend == "iupred2a":
         if not HAS_IUPRED2A:
@@ -208,61 +282,32 @@ def precompute_features(
         if verbose:
             print("Using IUPred2A backend (iupred2a_lib)")
 
-    for protein_id, sequence in sequences:
-        if verbose:
-            print(f"Precomputing features for {protein_id}")
-        
-        # Compute features depending on selected backend
-        if iupred_backend == "aiupred":
-            if not HAS_AIUPRED:
-                if not allow_missing_aiupred:
-                    raise RuntimeError("AIUPred backend selected but AIUPred is not installed. Use --allow-missing-aiupred to skip")
-                else:
-                    if verbose:
-                        print("Skipping AIUPred computation (missing) — features will be imputed downstream")
-            else:
-                # Use AIUPred for disorder prediction
-                iupred_short = aiupred_lib.predict_disorder(
-                    sequence, embedding_model, regression_model, device, smoothing=True
-                )
-                with open(iupred_dir / f"{protein_id}_iupredshort.txt", "w") as f:
-                    f.write(f"{protein_id}\n")
-                    for i, score in enumerate(iupred_short):
-                        f.write(f"{i+1}\t{sequence[i]}\t{score}\n")
-                if verbose:
-                    print(f"IUPred (AIUPred) features written for {protein_id}")
+    # Parallel or serial processing
+    worker_args = [
+        (
+            protein_id,
+            sequence,
+            iupred_backend,
+            allow_missing_aiupred,
+            force_cpu,
+            verbose,
+            iupred_dir,
+            anchor_dir,
+            domain_overlap_dir,
+            smart_domain_matches,
+            pfam_domain_matches,
+            motif_disordered_hmms,
+        )
+        for protein_id, sequence in sequences
+    ]
 
-        elif iupred_backend == "iupred2a":
-            # Use IUPred2A library directly (like original script)
-            # iupred() returns (scores_list, ''), anchor2() returns scores_list
-            result_iupredshort = iupred2a_lib.iupred(sequence, mode='short')[0]
-            with open(iupred_dir / f"{protein_id}_iupredshort.txt", "w") as f:
-                f.write(f"{protein_id}\n")
-                for pos, residue in enumerate(sequence):
-                    f.write(f"{pos+1}\t{residue}\t{result_iupredshort[pos]}\n")
-            
-            # Calculate ANCHOR2 scores
-            result_anchor = iupred2a_lib.anchor2(sequence)
-            with open(anchor_dir / f"{protein_id}_anchor.txt", "w") as f:
-                f.write(f"{protein_id}\n")
-                for pos, residue in enumerate(sequence):
-                    f.write(f"{pos+1}\t{residue}\t{result_anchor[pos]}\n")
-            
-            if verbose:
-                print(f"IUPred and Anchor scores of {protein_id} calculated.")
+    if num_workers is None or num_workers < 1:
+        num_workers = 1
 
-        else:
-            raise ValueError(f"Unknown iupred_backend: {iupred_backend}")
-
-        # Compute DomainOverlap from SMART/Pfam JSONs if available
-        dom_scores = _compute_domain_overlap(protein_id, len(sequence))
-        if dom_scores is not None:
-            with open(domain_overlap_dir / f"{protein_id}_domain_overlap.txt", "w") as f:
-                f.write(f"{protein_id}\n")
-                for pos, residue in enumerate(sequence):
-                    f.write(f"{pos+1}\t{residue}\t{dom_scores[pos]}\n")
-            if verbose:
-                print(f"Domain overlap scores of {protein_id} calculated.")
-        else:
-            if verbose:
-                print("SMART/Pfam domain JSONs not found — DomainOverlap will be imputed downstream.")
+    if num_workers == 1:
+        for args in worker_args:
+            _process_protein_task(args)
+    else:
+        max_workers = min(num_workers, len(worker_args))
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            list(executor.map(_process_protein_task, worker_args))

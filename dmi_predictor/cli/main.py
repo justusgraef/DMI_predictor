@@ -76,6 +76,12 @@ def cli():
     help='Enable verbose output',
 )
 @click.option(
+    '--num-workers',
+    type=int,
+    default=1,
+    help='Parallel workers for prediction. Default: 1 (serial).',
+)
+@click.option(
     '--skip-elm',
     is_flag=True,
     help='Skip ELM network calls (use cached/none defined-positions). Useful for offline runs.',
@@ -90,6 +96,7 @@ def predict(
     data_dir: Optional[str],
     features_dir: Optional[str],
     verbose: bool,
+    num_workers: int,
     skip_elm: bool,
 ):
     """
@@ -172,6 +179,7 @@ def predict(
             verbose=verbose,
             features_dir=features_dir,
             skip_elm=skip_elm,
+            num_workers=num_workers,
         )
 
         if verbose:
@@ -342,7 +350,13 @@ def validate_fasta(fasta_file: str, verbose: bool):
     default='aiupred',
     help='Which IUPred backend to use for disorder prediction (default: aiupred). Requires iupred2a_lib to be importable for iupred2a backend.',
 )
-def precompute_features(fasta_dir, fasta_file, output_dir, force_cpu, verbose, allow_missing_aiupred, write_placeholders, iupred_backend):
+@click.option(
+    '--num-workers',
+    type=int,
+    default=1,
+    help='Parallel workers for feature precompute (per-protein). Default: 1 (serial).',
+)
+def precompute_features(fasta_dir, fasta_file, output_dir, force_cpu, verbose, allow_missing_aiupred, write_placeholders, iupred_backend, num_workers):
     """
     Precompute per-protein features (AIUPred disorder/Anchor, DomainOverlap).
     Accepts a directory of FASTA files or a single multi-FASTA.
@@ -365,6 +379,7 @@ def precompute_features(fasta_dir, fasta_file, output_dir, force_cpu, verbose, a
             allow_missing_aiupred=allow_missing_aiupred,
             write_placeholders=write_placeholders,
             iupred_backend=iupred_backend,
+            num_workers=num_workers,
         )
     except RuntimeError as e:
         click.echo(click.style(f"✗ {e}", fg='red'), err=True)
