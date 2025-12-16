@@ -20,7 +20,7 @@ class DMIPredictorConfig:
         Args:
             data_dir (str, optional): Path to data directory. If None, uses package default.
         """
-        self.package_dir = Path(__file__).parent.parent
+        self.package_dir = Path(__file__).parent
         self.data_dir = Path(data_dir) if data_dir else self.package_dir / "data"
         self.scripts_dir = self.package_dir.parent / "scripts"
 
