@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 import json
 
+from dmi_predictor.config import DMIPredictorConfig
+
 # AIUPred integration (deep learning disorder predictor)
 try:
     import aiupred_lib
@@ -87,9 +89,11 @@ def precompute_features(
         subdir.mkdir(parents=True, exist_ok=True)
 
     # Load domain match JSONs (SMART/Pfam) and motif/disordered HMM exclusions for DomainOverlap
-    smart_json_path = Path("data/interpro_9606_smart_matches_20210122.json")
-    pfam_json_path = Path("data/interpro_9606_pfam_matches_20210122.json")
-    hmm_exclusions_path = Path("data/motif_disordered_smart_pfam_hmms.json")
+    cfg = DMIPredictorConfig()
+    data_dir = cfg.data_dir
+    smart_json_path = data_dir / "interpro_9606_smart_matches_20210122.json"
+    pfam_json_path = data_dir / "interpro_9606_pfam_matches_20210122.json"
+    hmm_exclusions_path = data_dir / "motif_disordered_smart_pfam_hmms.json"
     smart_domain_matches = None
     pfam_domain_matches = None
     motif_disordered_hmms = {}

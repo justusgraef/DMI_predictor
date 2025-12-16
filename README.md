@@ -23,6 +23,25 @@ pip install -e .
 
 ```
 
+#### Conda environment (Python 3.9 required)
+
+`scikit-learn==0.24.1` only ships wheels for Python 3.8/3.9; use Python 3.9 to avoid source builds failing on newer Pythons.
+`scikit-learn==0.24.1` is needed as it was used during model pre-training.
+
+```bash
+
+# create and activate the environment with Python 3.9
+conda create -y -n dmi-env python=3.9
+conda activate dmi-env
+
+# verify interpreter is from the env and 3.9.x
+which python
+python --version
+
+# install the package and deps inside the env
+pip install -e .
+```
+
 #### IUPred2A / AIUPred
 
 - Preferred: install IUPred2A (includes ANCHOR2) and make its Python package importable, e.g. `export PYTHONPATH=/path/to/iupred2a:$PYTHONPATH`. Download: https://iupred2a.elte.hu/download_new
