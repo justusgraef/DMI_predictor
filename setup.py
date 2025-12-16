@@ -35,11 +35,7 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=requirements,
-    extras_require={
-        'aiupred': [
-            'git+https://github.com/doszilab/AIUPred.git@main#egg=aiupred_lib'
-        ],
-    },
+    extras_require={},
     entry_points={
         "console_scripts": [
             "dmi-predict=dmi_predictor.cli.main:cli",
