@@ -41,11 +41,12 @@ class Protein(BaseProtein):
         self.networks = {}
         self.network_degree = None
         self._domain_set_cache = None  # Cache for domain_matches_dict.keys()
-        self._slim_matches_created = False  # Track if SLIM matches already created
+        # Track SLiM match creation per SLiM type (avoid global skip)
+        self._slim_ids_created = set()
 
     def create_slim_matches(self, dmi_type_inst, slim_type_inst):
-        # Skip if SLIM matches already created for this protein
-        if self._slim_matches_created:
+        # Skip re-computation only for this specific SLiM type
+        if slim_type_inst.slim_id in self._slim_ids_created:
             return
         
         # Single regex pass to get all matches with both start and pattern
@@ -53,7 +54,7 @@ class Protein(BaseProtein):
         matches = list(re.finditer(regex_pattern, self.sequence))
         
         if len(matches) > 0:
-            self.slim_matches_dict[slim_type_inst.slim_id] = []
+            self.slim_matches_dict.setdefault(slim_type_inst.slim_id, [])
             for match in matches:
                 match_start = match.start()
                 match_pattern = match.group(1)
@@ -79,8 +80,9 @@ class Protein(BaseProtein):
                     modified_pattern,
                 )
                 self.slim_matches_dict[slim_type_inst.slim_id].append(slim_match_inst)
-        
-        self._slim_matches_created = True
+
+            # Mark this SLiM type as processed for this protein (even if no matches)
+            self._slim_ids_created.add(slim_type_inst.slim_id)
 
     def get_domain_set(self):
         """Return cached set of domain IDs for this protein."""
