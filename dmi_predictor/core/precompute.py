@@ -93,7 +93,7 @@ def _process_protein_task(args):
                     "AIUPred backend selected but AIUPred is not installed. Use --allow-missing-aiupred to skip"
                 )
             if verbose:
-                print(f"[{protein_id}] AIUPred missing; skipping disorder features")
+                print(f"[{protein_id}] AIUPred missing; skipping disorder features", flush=True)
         else:
             embedding_model, regression_model, device = aiupred_lib.init_models('disorder', force_cpu=force_cpu)
             iupred_short = aiupred_lib.predict_disorder(
@@ -104,7 +104,7 @@ def _process_protein_task(args):
                 for i, score in enumerate(iupred_short):
                     f.write(f"{i+1}\t{sequence[i]}\t{score}\n")
             if verbose:
-                print(f"[{protein_id}] AIUPred features written")
+                print(f"[{protein_id}] AIUPred features written", flush=True)
 
     elif iupred_backend == "iupred2a":
         if not HAS_IUPRED2A:
@@ -124,7 +124,7 @@ def _process_protein_task(args):
                 f.write(f"{pos+1}\t{residue}\t{result_anchor[pos]}\n")
 
         if verbose:
-            print(f"[{protein_id}] IUPred2A + Anchor written")
+            print(f"[{protein_id}] IUPred2A + Anchor written", flush=True)
 
     else:
         raise ValueError(f"Unknown iupred_backend: {iupred_backend}")
@@ -143,10 +143,10 @@ def _process_protein_task(args):
             for pos, residue in enumerate(sequence):
                 f.write(f"{pos+1}\t{residue}\t{dom_scores[pos]}\n")
         if verbose:
-            print(f"[{protein_id}] DomainOverlap written")
+            print(f"[{protein_id}] DomainOverlap written", flush=True)
     else:
         if verbose:
-            print(f"[{protein_id}] SMART/Pfam domain JSONs not found — DomainOverlap will be imputed downstream.")
+            print(f"[{protein_id}] SMART/Pfam domain JSONs not found — DomainOverlap will be imputed downstream.", flush=True)
 
     return protein_id
 
@@ -204,7 +204,7 @@ def precompute_features(
     num_workers: int = 1,
 ) -> None:
     if (fasta_dir is None and fasta_file is None) or (fasta_dir and fasta_file):
-        print("Provide exactly one of --fasta-dir or --fasta-file")
+        print("Provide exactly one of --fasta-dir or --fasta-file", flush=True)
         return
 
     output_dir = Path(output_dir)
@@ -249,7 +249,7 @@ def precompute_features(
     else:
         sequences = _load_fasta_from_file(Path(fasta_file))
     if not sequences:
-        print("No FASTA sequences found")
+        print("No FASTA sequences found", flush=True)
         return
     
     # AIUPred availability check (models are initialized per worker)
@@ -268,7 +268,7 @@ def precompute_features(
                 raise RuntimeError(msg)
             else:
                 if verbose:
-                    print("AIUPred not found; skipping disorder feature computation (features will be left missing)")
+                    print("AIUPred not found; skipping disorder feature computation (features will be left missing)", flush=True)
     
     elif iupred_backend == "iupred2a":
         if not HAS_IUPRED2A:
@@ -280,7 +280,7 @@ def precompute_features(
                 "  from iupred2a import iupred2a_lib"
             )
         if verbose:
-            print("Using IUPred2A backend (iupred2a_lib)")
+            print("Using IUPred2A backend (iupred2a_lib)", flush=True)
 
     # Parallel or serial processing
     worker_args = [

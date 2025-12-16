@@ -71,6 +71,31 @@ dmi-predict predict \
   --verbose
 ```
 
+### Parallel processing (HPC / multi-core)
+
+Both `precompute-features` and `predict` support `--num-workers` for parallel execution:
+
+```bash
+# Precompute with 32 workers (per-protein parallelization)
+dmi-predict precompute-features \
+  --fasta-file sequences.fasta \
+  --output-dir features \
+  --iupred-backend iupred2a \
+  --num-workers 32 \
+  --verbose
+
+# Predict with 32 workers (per-PPI-chunk parallelization)
+dmi-predict predict \
+  --ppi-file interactions.tsv \
+  --fasta-files sequences.fasta \
+  --features-dir features \
+  --output results.tsv \
+  --num-workers 32 \
+  --verbose
+```
+
+Speedup scales nearly linearly with cores for large datasets. Default is `--num-workers 1` (serial).
+
 ### Input formats
 
 - **PPI file (`--ppi-file`)**: TSV/CSV with at least two columns: protein A, protein B. No header preferred; comment lines starting with `#` are ignored. Delimiter auto-detected from extension (`.tsv` -> tab, `.csv` -> comma, otherwise tab). Protein IDs should match the FASTA headers (first token).

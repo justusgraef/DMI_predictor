@@ -66,7 +66,7 @@ class DMIWorkflow:
 
     def _log(self, msg: str):
         if self.verbose:
-            print(msg)
+            print(msg, flush=True)
 
     def _init_interface(self, sequences: Dict[str, str], ppi_pairs: List[Tuple[str, str]]):
         iface = InterfaceHandling(
