@@ -2,17 +2,25 @@
 Feature precomputation workflow for DMI Predictor.
 
 This module generates per-protein features (IUPred, Anchor, DomainOverlap) for all input FASTA sequences.
-Requires AIUPred (deep learning) for disorder prediction.
+Requires AIUPred (deep learning) or IUPred2A for disorder prediction.
 """
 from pathlib import Path
 from typing import Optional, List, Tuple
+import json
 
-# AIUPred integration (replaces IUPred2a with modern deep learning)
+# AIUPred integration (deep learning disorder predictor)
 try:
     import aiupred_lib
     HAS_AIUPRED = True
 except ImportError:
     HAS_AIUPRED = False
+
+# IUPred2A integration (original IUPred + ANCHOR2)
+try:
+    import iupred2a_lib
+    HAS_IUPRED2A = True
+except ImportError:
+    HAS_IUPRED2A = False
 
 
 def _load_fasta_from_dir(fasta_dir: Path) -> List[Tuple[str, str]]:
@@ -62,6 +70,9 @@ def precompute_features(
     verbose: bool = False,
     force_cpu: bool = False,
     fasta_file: Optional[str] = None,
+    allow_missing_aiupred: bool = False,
+    write_placeholders: bool = False,
+    iupred_backend: str = "aiupred",
 ) -> None:
     if (fasta_dir is None and fasta_file is None) or (fasta_dir and fasta_file):
         print("Provide exactly one of --fasta-dir or --fasta-file")
@@ -75,6 +86,72 @@ def precompute_features(
     for subdir in (iupred_dir, anchor_dir, domain_overlap_dir):
         subdir.mkdir(parents=True, exist_ok=True)
 
+    # Load domain match JSONs (SMART/Pfam) and motif/disordered HMM exclusions for DomainOverlap
+    smart_json_path = Path("data/interpro_9606_smart_matches_20210122.json")
+    pfam_json_path = Path("data/interpro_9606_pfam_matches_20210122.json")
+    hmm_exclusions_path = Path("data/motif_disordered_smart_pfam_hmms.json")
+    smart_domain_matches = None
+    pfam_domain_matches = None
+    motif_disordered_hmms = {}
+    
+    if smart_json_path.exists():
+        try:
+            with open(smart_json_path, 'r') as f:
+                smart_domain_matches = json.load(f)
+        except Exception:
+            smart_domain_matches = None
+    if pfam_json_path.exists():
+        try:
+            with open(pfam_json_path, 'r') as f:
+                pfam_domain_matches = json.load(f)
+        except Exception:
+            pfam_domain_matches = None
+    if hmm_exclusions_path.exists():
+        try:
+            with open(hmm_exclusions_path, 'r') as f:
+                motif_disordered_hmms = json.load(f)
+        except Exception:
+            motif_disordered_hmms = {}
+
+    def _compute_domain_overlap(protein_id: str, seq_len: int) -> Optional[List[int]]:
+        """Compute binary domain overlap vector using SMART/Pfam InterPro matches.
+
+        Marks residues overlapping domain fragments, excluding those in motif_disordered_hmms
+        (SMART "Motif", Pfam "Disordered" HMMs are not treated as domains).
+        """
+        if smart_domain_matches is None and pfam_domain_matches is None:
+            return None
+        scores = [0] * seq_len
+        def apply_matches(db_obj):
+            try:
+                for result in db_obj.get('results', []):
+                    if result.get('metadata', {}).get('accession') == protein_id:
+                        for entry in result.get('entry_subset', []):
+                            entry_accession = entry.get('accession', '')
+                            # Skip if this HMM is marked as Motif/Disordered
+                            if entry_accession in motif_disordered_hmms:
+                                if motif_disordered_hmms[entry_accession] != 'Motif':
+                                    # It's Disordered (Pfam) or Motif (SMART), skip
+                                    continue
+                            for loc in entry.get('entry_protein_locations', []):
+                                for frag in loc.get('fragments', []):
+                                    start = int(frag.get('start', 1))
+                                    end = int(frag.get('end', 0))
+                                    if start < 1:
+                                        start = 1
+                                    if end > seq_len:
+                                        end = seq_len
+                                    # mark inclusive range
+                                    for i in range(start - 1, end):
+                                        scores[i] = 1
+            except Exception:
+                pass
+        if smart_domain_matches is not None:
+            apply_matches(smart_domain_matches)
+        if pfam_domain_matches is not None:
+            apply_matches(pfam_domain_matches)
+        return scores
+
     if fasta_dir:
         sequences = _load_fasta_from_dir(Path(fasta_dir))
     else:
@@ -83,45 +160,105 @@ def precompute_features(
         print("No FASTA sequences found")
         return
     
-    # AIUPred is required
+    # AIUPred handling: be explicit and safe
     embedding_model = None
     regression_model = None
     device = None
-    if not HAS_AIUPRED:
-        raise RuntimeError("AIUPred is required for precompute-features. Install aiupred-lib and set PYTHONPATH.")
 
-    try:
+    if iupred_backend == "aiupred":
+        if not HAS_AIUPRED:
+            msg = (
+                "AIUPred not available: precompute can only produce IUPred disorder "
+                "features when AIUPred is installed.\n"
+                "To install AIUPred (recommended):\n"
+                "  git clone https://github.com/doszilab/AIUPred.git /tmp/AIUPred\n"
+                "  export PYTHONPATH=/tmp/AIUPred:$PYTHONPATH\n"
+                "Alternatively, run with --allow-missing-aiupred to skip AIUPred and "
+                "leave disorder features missing (they will be imputed downstream)."
+            )
+            if not allow_missing_aiupred:
+                raise RuntimeError(msg)
+            else:
+                if verbose:
+                    print("AIUPred not found; skipping disorder feature computation (features will be left missing)")
+        else:
+            # Initialize AIUPred models
+            try:
+                if verbose:
+                    print("Loading AIUPred models...")
+                embedding_model, regression_model, device = aiupred_lib.init_models(
+                    'disorder', force_cpu=force_cpu
+                )
+            except Exception as e:
+                raise RuntimeError(f"Could not initialize AIUPred: {e}")
+    
+    elif iupred_backend == "iupred2a":
+        if not HAS_IUPRED2A:
+            raise RuntimeError(
+                "IUPred2A backend selected but iupred2a_lib not available.\n"
+                "Ensure IUPred2A is installed and iupred2a_lib is importable:\n"
+                "  import sys\n"
+                "  sys.path.append('/path/to/iupred2a')\n"
+                "  from iupred2a import iupred2a_lib"
+            )
         if verbose:
-            print("Loading AIUPred models...")
-        embedding_model, regression_model, device = aiupred_lib.init_models(
-            'disorder', force_cpu=force_cpu
-        )
-    except Exception as e:
-        raise RuntimeError(f"Could not initialize AIUPred: {e}")
+            print("Using IUPred2A backend (iupred2a_lib)")
 
     for protein_id, sequence in sequences:
         if verbose:
             print(f"Precomputing features for {protein_id}")
-        # Disorder (IUPred_short) and Anchor features via AIUPred
-        iupred_short = aiupred_lib.predict_disorder(
-            sequence, embedding_model, regression_model, device, smoothing=True
-        )
-        # AIUPred doesn't natively predict anchors; use disorder-based proxy
-        anchor = [0.5 - abs(0.5 - score) for score in iupred_short]  # Inverted disorder
-        # DomainOverlap (dummy for now)
-        domain_overlap = [0] * len(sequence)
-        # Write features to output_dir
-        with open(iupred_dir / f"{protein_id}_iupredshort.txt", "w") as f:
-            f.write(f"{protein_id}\n")
-            for i, score in enumerate(iupred_short):
-                f.write(f"{i+1}\t{sequence[i]}\t{score}\n")
-        with open(anchor_dir / f"{protein_id}_anchor.txt", "w") as f:
-            f.write(f"{protein_id}\n")
-            for i, score in enumerate(anchor):
-                f.write(f"{i+1}\t{sequence[i]}\t{score}\n")
-        with open(domain_overlap_dir / f"{protein_id}_domain_overlap.txt", "w") as f:
-            f.write(f"{protein_id}\n")
-            for i, score in enumerate(domain_overlap):
-                f.write(f"{i+1}\t{sequence[i]}\t{score}\n")
-        if verbose:
-            print(f"Features written for {protein_id}")
+        
+        # Compute features depending on selected backend
+        if iupred_backend == "aiupred":
+            if not HAS_AIUPRED:
+                if not allow_missing_aiupred:
+                    raise RuntimeError("AIUPred backend selected but AIUPred is not installed. Use --allow-missing-aiupred to skip")
+                else:
+                    if verbose:
+                        print("Skipping AIUPred computation (missing) — features will be imputed downstream")
+            else:
+                # Use AIUPred for disorder prediction
+                iupred_short = aiupred_lib.predict_disorder(
+                    sequence, embedding_model, regression_model, device, smoothing=True
+                )
+                with open(iupred_dir / f"{protein_id}_iupredshort.txt", "w") as f:
+                    f.write(f"{protein_id}\n")
+                    for i, score in enumerate(iupred_short):
+                        f.write(f"{i+1}\t{sequence[i]}\t{score}\n")
+                if verbose:
+                    print(f"IUPred (AIUPred) features written for {protein_id}")
+
+        elif iupred_backend == "iupred2a":
+            # Use IUPred2A library directly (like original script)
+            # iupred() returns (scores_list, ''), anchor2() returns scores_list
+            result_iupredshort = iupred2a_lib.iupred(sequence, mode='short')[0]
+            with open(iupred_dir / f"{protein_id}_iupredshort.txt", "w") as f:
+                f.write(f"{protein_id}\n")
+                for pos, residue in enumerate(sequence):
+                    f.write(f"{pos+1}\t{residue}\t{result_iupredshort[pos]}\n")
+            
+            # Calculate ANCHOR2 scores
+            result_anchor = iupred2a_lib.anchor2(sequence)
+            with open(anchor_dir / f"{protein_id}_anchor.txt", "w") as f:
+                f.write(f"{protein_id}\n")
+                for pos, residue in enumerate(sequence):
+                    f.write(f"{pos+1}\t{residue}\t{result_anchor[pos]}\n")
+            
+            if verbose:
+                print(f"IUPred and Anchor scores of {protein_id} calculated.")
+
+        else:
+            raise ValueError(f"Unknown iupred_backend: {iupred_backend}")
+
+        # Compute DomainOverlap from SMART/Pfam JSONs if available
+        dom_scores = _compute_domain_overlap(protein_id, len(sequence))
+        if dom_scores is not None:
+            with open(domain_overlap_dir / f"{protein_id}_domain_overlap.txt", "w") as f:
+                f.write(f"{protein_id}\n")
+                for pos, residue in enumerate(sequence):
+                    f.write(f"{pos+1}\t{residue}\t{dom_scores[pos]}\n")
+            if verbose:
+                print(f"Domain overlap scores of {protein_id} calculated.")
+        else:
+            if verbose:
+                print("SMART/Pfam domain JSONs not found — DomainOverlap will be imputed downstream.")

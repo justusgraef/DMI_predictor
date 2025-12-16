@@ -75,6 +75,11 @@ def cli():
     is_flag=True,
     help='Enable verbose output',
 )
+@click.option(
+    '--skip-elm',
+    is_flag=True,
+    help='Skip ELM network calls (use cached/none defined-positions). Useful for offline runs.',
+)
 def predict(
     ppi_file: str,
     fasta_dir: Optional[str],
@@ -85,6 +90,7 @@ def predict(
     data_dir: Optional[str],
     features_dir: Optional[str],
     verbose: bool,
+    skip_elm: bool,
 ):
     """
     Predict domain-motif interfaces (DMI) for protein-protein interactions.
@@ -165,6 +171,7 @@ def predict(
             score_threshold=score_threshold,
             verbose=verbose,
             features_dir=features_dir,
+            skip_elm=skip_elm,
         )
 
         if verbose:
@@ -319,7 +326,23 @@ def validate_fasta(fasta_file: str, verbose: bool):
     is_flag=True,
     help='Enable verbose output',
 )
-def precompute_features(fasta_dir, fasta_file, output_dir, force_cpu, verbose):
+@click.option(
+    '--allow-missing-aiupred',
+    is_flag=True,
+    help='If set, skip AIUPred when it is not installed and leave disorder features missing (they will be imputed downstream)',
+)
+@click.option(
+    '--write-placeholders',
+    is_flag=True,
+    help='If set, write placeholder feature files when features cannot be computed (not recommended)',
+)
+@click.option(
+    '--iupred-backend',
+    type=click.Choice(['aiupred', 'iupred2a']),
+    default='aiupred',
+    help='Which IUPred backend to use for disorder prediction (default: aiupred). Requires iupred2a_lib to be importable for iupred2a backend.',
+)
+def precompute_features(fasta_dir, fasta_file, output_dir, force_cpu, verbose, allow_missing_aiupred, write_placeholders, iupred_backend):
     """
     Precompute per-protein features (AIUPred disorder/Anchor, DomainOverlap).
     Accepts a directory of FASTA files or a single multi-FASTA.
@@ -330,15 +353,18 @@ def precompute_features(fasta_dir, fasta_file, output_dir, force_cpu, verbose):
             err=True,
         )
         sys.exit(1)
-
     from dmi_predictor.core.precompute import precompute_features as workflow_precompute
     try:
+        # Pass through new flags (allow skipping AIUPred and optional placeholders)
         workflow_precompute(
             fasta_dir=fasta_dir,
             fasta_file=fasta_file,
             output_dir=output_dir,
             verbose=verbose,
             force_cpu=force_cpu,
+            allow_missing_aiupred=allow_missing_aiupred,
+            write_placeholders=write_placeholders,
+            iupred_backend=iupred_backend,
         )
     except RuntimeError as e:
         click.echo(click.style(f"✗ {e}", fg='red'), err=True)

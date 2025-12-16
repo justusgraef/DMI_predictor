@@ -9,7 +9,7 @@ DMI Predictor automates the prediction of functional domain-motif interactions i
 1. **Detects domains** in protein sequences using InterPro/Pfam/SMART databases
 2. **Identifies short linear motifs (SLiMs)** using ELM database patterns
 3. **Matches domains to motifs** using a curated reference database
-4. **Scores predictions** using a trained random forest model
+4. **Scores predictions** using a pre-trained random forest model
 5. **Ranks results** by likelihood of functional interaction
 
 ## Quick Start
@@ -21,58 +21,44 @@ git clone https://github.com/justusgraef/DMI_predictor.git
 cd DMI_predictor
 pip install -e .
 
-# Required for precompute: AIUPred disorder scores
-# For CPU-only:
-#   pip install torch --index-url https://download.pytorch.org/whl/cpu
-#   git clone https://github.com/doszilab/AIUPred.git /tmp/AIUPred
-#   export PYTHONPATH=/tmp/AIUPred:$PYTHONPATH
 ```
 
-### Basic Usage
+#### IUPred2A / AIUPred
+
+- Preferred: install IUPred2A (includes ANCHOR2) and make its Python package importable, e.g. `export PYTHONPATH=/path/to/iupred2a:$PYTHONPATH`. Download: https://iupred2a.elte.hu/download_new
+- Alternative: AIUPred backend (`--iupred-backend aiupred`) if IUPred2A is unavailable. Download: https://aiupred.elte.hu/download
+
+### Minimal usage
+
+Precompute features (disorder, ANCHOR2, domain overlap) from a multi-FASTA using IUPred2A:
 
 ```bash
-# Run prediction on PPI list with sequences
-dmi-predict predict \
-  --ppi-file interactions.tsv \
-  --fasta-dir ./sequences/ \
-  --output results.tsv
-
-# Precompute disorder features (folder of FASTA files)
+export PYTHONPATH=/path/to/iupred2a:$PYTHONPATH
 dmi-predict precompute-features \
-  --fasta-dir ./sequences/ \
-  --output-dir ./features \
-  --verbose
-
-# Or from a single multi-FASTA
-dmi-predict precompute-features \
-  --fasta-file ./proteins.fasta \
-  --output-dir ./features \
+  --fasta-file sequences.fasta \
+  --output-dir features \
+  --iupred-backend iupred2a \
   --verbose
 ```
 
-For detailed usage, see [USAGE.md](USAGE.md)
+Run prediction on a PPI table with the corresponding sequences and precomputed features:
 
-## Features
+```bash
+dmi-predict predict \
+  --ppi-file interactions.tsv \
+  --fasta-files sequences.fasta \
+  --features-dir features \
+  --output results.tsv \
+  --verbose
+```
 
-✨ **Easy-to-use CLI**
-- Simple commands for common workflows
-- Flexible input formats (TSV, CSV, FASTA)
-- Multiple output formats (TSV, CSV, JSON)
+### Input formats
 
-⚡ **Scalable**
-- Batch processing of PPIs
-- Flexible sequence input (directory or individual files)
-- Configurable scoring thresholds
+- **PPI file (`--ppi-file`)**: TSV/CSV with at least two columns: protein A, protein B. No header preferred; comment lines starting with `#` are ignored. Delimiter auto-detected from extension (`.tsv` -> tab, `.csv` -> comma, otherwise tab). Protein IDs should match the FASTA headers (first token).
+- **Sequences**: Either a single multi-FASTA (`--fasta-files sequences.fasta`) or a directory of FASTA files (`--fasta-dir ./sequences/`). For each record, the first whitespace-separated token after `>` is taken as the ID. Sequences must use amino-acid letters A–Z (and `*`/`-` if present). IDs must match those used in the PPI file.
 
-🧬 **Comprehensive**
-- 1000+ ELM motif patterns
-- Pfam and SMART domain databases
-- 16+ prediction features per DMI
 
-🔬 **Well-validated**
-- Trained on curated DMI datasets
-- Median imputation for missing features
-- Cross-validated random forest model
+
 
 ## Architecture
 
@@ -89,11 +75,6 @@ dmi_predictor/
 ├── config.py         # Configuration management
 └── data/             # Data files (downloaded separately)
 
-scripts/             # Research/development scripts
-├── DMI_prediction/  # Core prediction algorithms
-├── RRS_formation/   # Random reference set generation
-├── features_analysis/
-└── model_fitting_evaluation/
 ```
 
 ### Data Requirements
@@ -105,80 +86,14 @@ Critical data files (place in `dmi_predictor/data/`):
 - `final_median_imputer_with_RRSv4_3.joblib` - Feature imputer
 - `interpro_9606_pfam_matches_20210122.json` - InterPro domain matches
 - `interpro_9606_smart_matches_20210122.json` - InterPro domain matches
+- `motif_disordered_smart_pfam_hmms.json` - HMMs to exclude from domain-overlap (Pfam "Disordered", SMART "Motif")
 
-## Usage Examples
-
-### Command Line
-
-```bash
-# Validate data files
-dmi-predict check-data
-
-# Validate input files
-dmi-predict validate-ppi --ppi-file interactions.tsv
-dmi-predict validate-fasta --fasta-file proteins.fasta
-
-# Run prediction with custom threshold
-dmi-predict predict \
-  --ppi-file interactions.tsv \
-  --fasta-dir sequences/ \
-  --score-threshold 0.6 \
-  --output-format json \
-  --output results.json \
-  --verbose
-```
-
-### Python API
-
-```python
-from dmi_predictor import DMIPredictorConfig, FastaReader, PPIReader
-
-# Load configuration
-config = DMIPredictorConfig()
-
-# Read PPI file
-ppi_pairs = PPIReader.read_ppi_file_generic('interactions.tsv')
-
-# Read sequences
-sequences = FastaReader.read_fasta_directory('./sequences/')
-
-# Run prediction (coming soon)
-# results = predictor.predict(ppi_pairs, sequences, config)
-```
-
-See [examples/example_workflow.py](examples/example_workflow.py) for complete example.
-
-## Development
-
-Original research and development scripts are in `scripts/` directory:
-
-- **DMI_prediction/**: Core prediction algorithms (DMIDB.py, DMIpredictor.py)
-- **RRS_formation/**: Random reference set generation
-- **features_analysis/**: Feature importance and model evaluation
-- **model_fitting_evaluation/**: Model training and cross-validation
-
-These scripts are preserved for:
-- Model retraining with new data
-- Feature analysis and visualization
-- Validation and benchmarking
-- Reference for understanding algorithms
-
-
-## Requirements
-
-- Python 3.8+
-- scikit-learn >= 0.23.0
-- numpy >= 1.19.0
-- pandas >= 1.1.0
-- click >= 8.0.0
-
-See `requirements.txt` for full list.
 
 ## Citation
 
 Original work:
 ```
-[Original citation - add reference to preprint]
+[Hubrich, Valverde, Lee et al., 2025, bioRxiv, doi: 10.1101/2025.06.27.661911]
 ```
 
 ## License

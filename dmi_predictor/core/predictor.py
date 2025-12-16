@@ -47,12 +47,20 @@ class DMIWorkflow:
         config: DMIPredictorConfig,
         verbose: bool = False,
         features_dir: Optional[str] = None,
+        skip_elm: bool = False,
     ):
         self.config = config
         self.verbose = verbose
         self.features_dir = Path(features_dir) if features_dir else None
         self.model = joblib.load(config.model_file)
         self.imputer = joblib.load(config.imputer_file)
+        # Set module-level switch in dmidb to control ELM calls
+        try:
+            from dmi_predictor.core import dmidb as _dmidb
+
+            _dmidb.SKIP_ELM = skip_elm
+        except Exception:
+            pass
 
     def _log(self, msg: str):
         if self.verbose:
@@ -292,6 +300,6 @@ class DMIWorkflow:
             raise ValueError(f"Unknown output format: {output_format}")
 
 
-def run_dmi_prediction(ppi_pairs, sequences, config, output_file, output_format, score_threshold, verbose, features_dir=None):
-    workflow = DMIWorkflow(config, verbose=verbose, features_dir=features_dir)
+def run_dmi_prediction(ppi_pairs, sequences, config, output_file, output_format, score_threshold, verbose, features_dir=None, skip_elm: bool = False):
+    workflow = DMIWorkflow(config, verbose=verbose, features_dir=features_dir, skip_elm=skip_elm)
     workflow.run(ppi_pairs, sequences, output_file, output_format, score_threshold)

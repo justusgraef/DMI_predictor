@@ -13,7 +13,7 @@ setup(
     description="A tool to predict domain-motif interfaces (DMI) in protein-protein interactions",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/lagelab/DMI_predictor",
+    url="https://github.com/justusgraef/DMI_predictor",
     packages=find_packages(),
     package_data={
         "dmi_predictor": [
@@ -35,6 +35,11 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=requirements,
+    extras_require={
+        'aiupred': [
+            'git+https://github.com/doszilab/AIUPred.git@main#egg=aiupred_lib'
+        ],
+    },
     entry_points={
         "console_scripts": [
             "dmi-predict=dmi_predictor.cli.main:cli",

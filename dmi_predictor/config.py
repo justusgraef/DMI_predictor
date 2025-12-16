@@ -35,8 +35,9 @@ class DMIPredictorConfig:
         self.interpro_pfam_file = self.data_dir / "interpro_9606_pfam_matches_20210122.json"
         self.interpro_smart_file = self.data_dir / "interpro_9606_smart_matches_20210122.json"
 
-        # Validate data directory structure
-        self._validate_data_files()
+        # Note: do not validate files on import/initialization to allow importing
+        # the package in environments where the large data files live elsewhere.
+        # Call `validate()` explicitly where needed.
 
     def _validate_data_files(self) -> None:
         """

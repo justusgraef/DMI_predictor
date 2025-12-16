@@ -3,7 +3,6 @@ Port of DMIDB classes for DMI prediction.
 """
 import re
 import json
-import requests
 import glob
 import numpy as np
 import scipy.special as sc
@@ -18,6 +17,10 @@ from .protein_interaction_interfaces import (
     DomainInterfaceMatch as BaseDomainInterfaceMatch,
     InterfaceHandling as BaseInterfaceHandling,
 )
+import requests
+
+# Module-level switch to skip ELM network calls (set by workflow/CLI)
+SKIP_ELM = False
 
 dummy_value = 88888
 
@@ -157,46 +160,56 @@ class SLiMMatch:
             self.DomainOverlap = float(sum(self.prot_inst.DomainOverlap_scores[start-1:end])/(end - start + 1))
         else:
             self.DomainOverlap = 0.0
-        payload = {'motif': regex, 'sequence': pattern}
-        try:
-            timeout = 10
-            r = requests.get(defined_positions_url, params=payload, timeout=timeout)
-            if r.status_code == requests.codes.ok:
-                response = r.json()
-                defined_positions = [start + (ind - 1) for ind in response.get("indexes", [])]
-                for i, cons_type in enumerate([
-                    self.prot_inst.qfo_RLC_scores,
-                    self.prot_inst.vertebrates_RLC_scores,
-                    self.prot_inst.mammalia_RLC_scores,
-                    self.prot_inst.metazoa_RLC_scores,
-                ]):
-                    if any(cons_type):
-                        defined_positions_cons_scores = []
-                        for pos, score in cons_type.items():
-                            if int(pos) in defined_positions:
-                                defined_positions_cons_scores.append(score)
-                        if any(defined_positions_cons_scores):
-                            pmotif = np.product(defined_positions_cons_scores)
-                            lnpmotif = -np.log(pmotif)
-                            sigmotif = sc.gammaincc(len(defined_positions_cons_scores), lnpmotif)
-                            meanRLCprob = np.mean(defined_positions_cons_scores)
-                            varRLCprob = sum([abs(x - meanRLCprob) for x in defined_positions_cons_scores]) / len(defined_positions_cons_scores)
-                            if i == 0:
-                                self.qfo_RLC = sigmotif
-                                self.qfo_RLCvar = varRLCprob
-                            elif i == 1:
-                                self.vertebrates_RLC = sigmotif
-                                self.vertebrates_RLCvar = varRLCprob
-                            elif i == 2:
-                                self.mammalia_RLC = sigmotif
-                                self.mammalia_RLCvar = varRLCprob
-                            elif i == 3:
-                                self.metazoa_RLC = sigmotif
-                                self.metazoa_RLCvar = varRLCprob
-            else:
-                self._set_cons_problem()
-        except requests.RequestException:
+        # Direct ELM API call (no caching)
+        if not SKIP_ELM:
+            try:
+                response = requests.get(
+                    "http://slim.icr.ac.uk/restapi/functions/defined_positions",
+                    params={"motif": regex, "sequence": pattern},
+                    timeout=10
+                )
+                if response.status_code == 200:
+                    response = response.json()
+                else:
+                    response = None
+            except Exception:
+                response = None
+        else:
+            response = None
+        
+        if not response:
             self._set_cons_problem()
+        else:
+            defined_positions = [start + (ind - 1) for ind in response.get("indexes", [])]
+            for i, cons_type in enumerate([
+                self.prot_inst.qfo_RLC_scores,
+                self.prot_inst.vertebrates_RLC_scores,
+                self.prot_inst.mammalia_RLC_scores,
+                self.prot_inst.metazoa_RLC_scores,
+            ]):
+                if any(cons_type):
+                    defined_positions_cons_scores = []
+                    for pos, score in cons_type.items():
+                        if int(pos) in defined_positions:
+                            defined_positions_cons_scores.append(score)
+                    if any(defined_positions_cons_scores):
+                        pmotif = np.product(defined_positions_cons_scores)
+                        lnpmotif = -np.log(pmotif)
+                        sigmotif = sc.gammaincc(len(defined_positions_cons_scores), lnpmotif)
+                        meanRLCprob = np.mean(defined_positions_cons_scores)
+                        varRLCprob = sum([abs(x - meanRLCprob) for x in defined_positions_cons_scores]) / len(defined_positions_cons_scores)
+                        if i == 0:
+                            self.qfo_RLC = sigmotif
+                            self.qfo_RLCvar = varRLCprob
+                        elif i == 1:
+                            self.vertebrates_RLC = sigmotif
+                            self.vertebrates_RLCvar = varRLCprob
+                        elif i == 2:
+                            self.mammalia_RLC = sigmotif
+                            self.mammalia_RLCvar = varRLCprob
+                        elif i == 3:
+                            self.metazoa_RLC = sigmotif
+                            self.metazoa_RLCvar = varRLCprob
         if any(self.prot_inst.networks):
             num_rand_networks = len(self.prot_inst.networks) - 1
             vertices_with_overlapping_domains = {}
