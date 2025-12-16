@@ -112,6 +112,11 @@ class DMIWorkflow:
                             if any(sel_domain):
                                 sel_dmi_type_inst.append((dmi_type_inst, sel_domain))
                 for dmi_type_inst, domain_type_list in sel_dmi_type_inst:
+                    # Skip if SLiM type not loaded (e.g., outdated ELM classes file)
+                    if dmi_type_inst.slim_id not in iface.slim_types_dict:
+                        if self.verbose:
+                            print(f"Warning: SLiM type {dmi_type_inst.slim_id} not found in loaded ELM classes", flush=True)
+                        continue
                     slim_type_inst = iface.slim_types_dict[dmi_type_inst.slim_id]
                     iface.proteins_dict[protein_pair[1]].create_slim_matches(dmi_type_inst, slim_type_inst)
                     if dmi_type_inst.slim_id in iface.proteins_dict[protein_pair[1]].slim_matches_dict:
