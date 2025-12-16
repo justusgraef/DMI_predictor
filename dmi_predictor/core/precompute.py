@@ -80,10 +80,34 @@ def _process_protein_task(args):
         iupred_dir,
         anchor_dir,
         domain_overlap_dir,
-        smart_domain_matches,
-        pfam_domain_matches,
-        motif_disordered_hmms,
+        smart_json_path,
+        pfam_json_path,
+        hmm_exclusions_path,
     ) = args
+    
+    # Load JSONs in worker process (avoid pickling large objects)
+    smart_domain_matches = None
+    pfam_domain_matches = None
+    motif_disordered_hmms = {}
+    
+    if smart_json_path and Path(smart_json_path).exists():
+        try:
+            with open(smart_json_path, 'r') as f:
+                smart_domain_matches = json.load(f)
+        except Exception:
+            smart_domain_matches = None
+    if pfam_json_path and Path(pfam_json_path).exists():
+        try:
+            with open(pfam_json_path, 'r') as f:
+                pfam_domain_matches = json.load(f)
+        except Exception:
+            pfam_domain_matches = None
+    if hmm_exclusions_path and Path(hmm_exclusions_path).exists():
+        try:
+            with open(hmm_exclusions_path, 'r') as f:
+                motif_disordered_hmms = json.load(f)
+        except Exception:
+            motif_disordered_hmms = {}
 
     # Compute disorder/anchor
     if iupred_backend == "aiupred":
@@ -221,28 +245,6 @@ def precompute_features(
     smart_json_path = data_dir / "interpro_9606_smart_matches_20210122.json"
     pfam_json_path = data_dir / "interpro_9606_pfam_matches_20210122.json"
     hmm_exclusions_path = data_dir / "motif_disordered_smart_pfam_hmms.json"
-    smart_domain_matches = None
-    pfam_domain_matches = None
-    motif_disordered_hmms = {}
-    
-    if smart_json_path.exists():
-        try:
-            with open(smart_json_path, 'r') as f:
-                smart_domain_matches = json.load(f)
-        except Exception:
-            smart_domain_matches = None
-    if pfam_json_path.exists():
-        try:
-            with open(pfam_json_path, 'r') as f:
-                pfam_domain_matches = json.load(f)
-        except Exception:
-            pfam_domain_matches = None
-    if hmm_exclusions_path.exists():
-        try:
-            with open(hmm_exclusions_path, 'r') as f:
-                motif_disordered_hmms = json.load(f)
-        except Exception:
-            motif_disordered_hmms = {}
 
     if fasta_dir:
         sequences = _load_fasta_from_dir(Path(fasta_dir))
@@ -283,6 +285,7 @@ def precompute_features(
             print("Using IUPred2A backend (iupred2a_lib)", flush=True)
 
     # Parallel or serial processing
+    # Pass file paths instead of loaded JSON objects to avoid pickling overhead
     worker_args = [
         (
             protein_id,
@@ -294,9 +297,9 @@ def precompute_features(
             iupred_dir,
             anchor_dir,
             domain_overlap_dir,
-            smart_domain_matches,
-            pfam_domain_matches,
-            motif_disordered_hmms,
+            str(smart_json_path),
+            str(pfam_json_path),
+            str(hmm_exclusions_path),
         )
         for protein_id, sequence in sequences
     ]
