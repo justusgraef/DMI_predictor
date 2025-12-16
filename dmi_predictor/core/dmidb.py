@@ -37,32 +37,53 @@ class Protein(BaseProtein):
         self.metazoa_RLC_scores = {}
         self.networks = {}
         self.network_degree = None
+        self._domain_set_cache = None  # Cache for domain_matches_dict.keys()
+        self._slim_matches_created = False  # Track if SLIM matches already created
 
     def create_slim_matches(self, dmi_type_inst, slim_type_inst):
-        slim_start = [match.start() for match in re.finditer('(?=(' + slim_type_inst.regex + '))', self.sequence)]
-        match_pattern = [match.group(1) for match in re.finditer('(?=(' + slim_type_inst.regex + '))', self.sequence)]
-        match_results = list(zip(slim_start, match_pattern))
-        if len(match_results) > 0:
+        # Skip if SLIM matches already created for this protein
+        if self._slim_matches_created:
+            return
+        
+        # Single regex pass to get all matches with both start and pattern
+        regex_pattern = '(?=(' + slim_type_inst.regex + '))'
+        matches = list(re.finditer(regex_pattern, self.sequence))
+        
+        if len(matches) > 0:
             self.slim_matches_dict[slim_type_inst.slim_id] = []
-            for match in match_results:
-                if match[0] == 0:
-                    pattern = self.sequence[match[0] : match[0] + len(match[1]) + 1]
+            for match in matches:
+                match_start = match.start()
+                match_pattern = match.group(1)
+                match_len = len(match_pattern)
+                
+                # Extract context pattern
+                if match_start == 0:
+                    pattern = self.sequence[match_start : match_start + match_len + 1]
                     modified_pattern = '-' + pattern[:-1] + str.lower(pattern[-1])
-                elif match[0] + len(match[1]) == len(self.sequence):
-                    pattern = self.sequence[match[0] - 1 : match[0] + len(match[1])]
+                elif match_start + match_len == len(self.sequence):
+                    pattern = self.sequence[match_start - 1 : match_start + match_len]
                     modified_pattern = str.lower(pattern[0]) + pattern[1:]
                 else:
-                    pattern = self.sequence[match[0] - 1 : match[0] + len(match[1]) + 1]
+                    pattern = self.sequence[match_start - 1 : match_start + match_len + 1]
                     modified_pattern = str.lower(pattern[0]) + pattern[1:-1] + str.lower(pattern[-1])
+                
                 slim_match_inst = SLiMMatch(
                     dmi_type_inst,
                     slim_type_inst,
                     self,
-                    match[0] + 1,
-                    match[0] + len(match[1]),
+                    match_start + 1,
+                    match_start + match_len,
                     modified_pattern,
                 )
                 self.slim_matches_dict[slim_type_inst.slim_id].append(slim_match_inst)
+        
+        self._slim_matches_created = True
+
+    def get_domain_set(self):
+        """Return cached set of domain IDs for this protein."""
+        if self._domain_set_cache is None:
+            self._domain_set_cache = set(self.domain_matches_dict.keys())
+        return self._domain_set_cache
 
     def read_in_features(self, features_path):
         try:
@@ -220,7 +241,8 @@ class SLiMMatch:
                     for network_id, network in self.prot_inst.networks.items():
                         count = 0
                         for partner in network:
-                            partner_domains = set(partner.domain_matches_dict.keys())
+                            # Use cached domain set instead of creating new set each time
+                            partner_domains = partner.get_domain_set()
                             if domains.intersection(partner_domains) == domains:
                                 count += 1
                                 if network_id == 0:
@@ -234,7 +256,8 @@ class SLiMMatch:
                     for network_id, network in self.prot_inst.networks.items():
                         count = 0
                         for partner in network:
-                            partner_domains = set(partner.domain_matches_dict.keys())
+                            # Use cached domain set
+                            partner_domains = partner.get_domain_set()
                             if any(domains.intersection(partner_domains)):
                                 count += 1
                                 if network_id == 0:
@@ -245,7 +268,8 @@ class SLiMMatch:
                 for network_id, network in self.prot_inst.networks.items():
                     count = 0
                     for partner in network:
-                        partner_domains = set(partner.domain_matches_dict.keys())
+                        # Use cached domain set
+                        partner_domains = partner.get_domain_set()
                         if domains.intersection(partner_domains) == domains:
                             count += 1
                             if network_id == 0:
