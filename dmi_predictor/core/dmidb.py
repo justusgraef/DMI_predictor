@@ -22,6 +22,9 @@ import requests
 # Module-level switch to skip ELM network calls (set by workflow/CLI)
 SKIP_ELM = False
 
+# Module-level ELM API response cache
+ELM_RESPONSE_CACHE = {}
+
 dummy_value = 88888
 
 class Protein(BaseProtein):
@@ -181,20 +184,27 @@ class SLiMMatch:
             self.DomainOverlap = float(sum(self.prot_inst.DomainOverlap_scores[start-1:end])/(end - start + 1))
         else:
             self.DomainOverlap = 0.0
-        # Direct ELM API call (no caching)
+        # ELM API call with caching by regex pattern
         if not SKIP_ELM:
-            try:
-                response = requests.get(
-                    "http://slim.icr.ac.uk/restapi/functions/defined_positions",
-                    params={"motif": regex, "sequence": pattern},
-                    timeout=10
-                )
-                if response.status_code == 200:
-                    response = response.json()
-                else:
+            cache_key = (regex, pattern)
+            if cache_key in ELM_RESPONSE_CACHE:
+                response = ELM_RESPONSE_CACHE[cache_key]
+            else:
+                try:
+                    response = requests.get(
+                        "http://slim.icr.ac.uk/restapi/functions/defined_positions",
+                        params={"motif": regex, "sequence": pattern},
+                        timeout=10
+                    )
+                    if response.status_code == 200:
+                        response = response.json()
+                        ELM_RESPONSE_CACHE[cache_key] = response
+                    else:
+                        response = None
+                        ELM_RESPONSE_CACHE[cache_key] = None
+                except Exception:
                     response = None
-            except Exception:
-                response = None
+                    ELM_RESPONSE_CACHE[cache_key] = None
         else:
             response = None
         
