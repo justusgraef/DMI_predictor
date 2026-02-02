@@ -71,6 +71,12 @@ def cli():
     help='Path to precomputed feature directory (IUPred_short/Anchor/Domain_overlap)',
 )
 @click.option(
+    '--conservation-scores-dir',
+    type=click.Path(exists=True),
+    required=False,
+    help='Path to conservation scores directory (per-protein JSON files). If not provided, uses data_dir/conservation_scores if it exists.',
+)
+@click.option(
     '--verbose',
     is_flag=True,
     help='Enable verbose output',
@@ -95,6 +101,7 @@ def predict(
     score_threshold: float,
     data_dir: Optional[str],
     features_dir: Optional[str],
+    conservation_scores_dir: Optional[str],
     verbose: bool,
     num_workers: int,
     skip_elm: bool,
@@ -114,7 +121,7 @@ def predict(
             click.echo(f"PPI file: {ppi_file}")
 
         # Initialize configuration
-        config = DMIPredictorConfig(data_dir=data_dir)
+        config = DMIPredictorConfig(data_dir=data_dir, conservation_scores_dir=conservation_scores_dir)
         if verbose:
             click.echo("Configuration loaded successfully")
 

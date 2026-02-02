@@ -324,6 +324,7 @@ class DMIWorkflow:
                             sequences,
                             str(self.config.data_dir),
                             self.features_dir,
+                            str(self.config.conservation_scores_dir) if self.config.conservation_scores_dir.exists() else None,
                             self.verbose,
                             score_threshold,
                             self.skip_elm,
@@ -346,8 +347,8 @@ class DMIWorkflow:
             raise ValueError(f"Unknown output format: {output_format}")
 
 
-def _predict_chunk_task(ppi_pairs_chunk, sequences, data_dir, features_dir, verbose, score_threshold, skip_elm):
-    cfg = DMIPredictorConfig(data_dir=data_dir)
+def _predict_chunk_task(ppi_pairs_chunk, sequences, data_dir, features_dir, conservation_scores_dir, verbose, score_threshold, skip_elm):
+    cfg = DMIPredictorConfig(data_dir=data_dir, conservation_scores_dir=conservation_scores_dir)
     workflow = DMIWorkflow(cfg, verbose=verbose, features_dir=features_dir, skip_elm=skip_elm)
     return workflow._run_chunk(ppi_pairs_chunk, sequences, score_threshold)
 

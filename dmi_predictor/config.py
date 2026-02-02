@@ -13,12 +13,14 @@ import os
 class DMIPredictorConfig:
     """Configuration for DMI Predictor."""
 
-    def __init__(self, data_dir: Optional[str] = None):
+    def __init__(self, data_dir: Optional[str] = None, conservation_scores_dir: Optional[str] = None):
         """
         Initialize DMI Predictor configuration.
 
         Args:
             data_dir (str, optional): Path to data directory. If None, uses package default.
+            conservation_scores_dir (str, optional): Path to conservation scores directory.
+                If None, uses data_dir/conservation_scores if it exists.
         """
         self.package_dir = Path(__file__).parent
         self.data_dir = Path(data_dir) if data_dir else self.package_dir / "data"
@@ -34,7 +36,11 @@ class DMIPredictorConfig:
         self.imputer_file = self.data_dir / "final_median_imputer_with_RRSv4_3.joblib"
         self.interpro_pfam_file = self.data_dir / "interpro_9606_pfam_matches_20210122.json"
         self.interpro_smart_file = self.data_dir / "interpro_9606_smart_matches_20210122.json"
-        self.conservation_scores_dir = self.data_dir / "conservation_scores"
+        # Conservation scores: use explicit path if provided, otherwise fall back to data_dir/conservation_scores
+        if conservation_scores_dir:
+            self.conservation_scores_dir = Path(conservation_scores_dir)
+        else:
+            self.conservation_scores_dir = self.data_dir / "conservation_scores"
 
         # Note: do not validate files on import/initialization to allow importing
         # the package in environments where the large data files live elsewhere.
