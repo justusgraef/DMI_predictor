@@ -34,6 +34,7 @@ class DMIPredictorConfig:
         self.imputer_file = self.data_dir / "final_median_imputer_with_RRSv4_3.joblib"
         self.interpro_pfam_file = self.data_dir / "interpro_9606_pfam_matches_20210122.json"
         self.interpro_smart_file = self.data_dir / "interpro_9606_smart_matches_20210122.json"
+        self.conservation_scores_dir = self.data_dir / "conservation_scores"
 
         # Note: do not validate files on import/initialization to allow importing
         # the package in environments where the large data files live elsewhere.

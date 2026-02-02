@@ -90,42 +90,49 @@ class Protein(BaseProtein):
             self._domain_set_cache = set(self.domain_matches_dict.keys())
         return self._domain_set_cache
 
-    def read_in_features(self, features_path):
-        try:
-            with open(features_path + '/IUPred_short/' + self.protein_id + '_iupredshort.txt', 'r') as f:
-                lines = [line.strip() for line in f.readlines()]
-            for line in lines[1:]:
-                self.IUPredShort_scores.append(float(line.split('\t')[2]))
-        except FileNotFoundError:
-            pass
-        try:
-            with open(features_path + '/Anchor/' + self.protein_id + '_anchor.txt', 'r') as f:
-                lines = [line.strip() for line in f.readlines()]
-            for line in lines[1:]:
-                self.Anchor_scores.append(float(line.split('\t')[2]))
-        except FileNotFoundError:
-            pass
-        try:
-            with open(features_path + '/Domain_overlap/' + self.protein_id + '_domain_overlap.txt', 'r') as f:
-                lines = [line.strip() for line in f.readlines()]
-            for line in lines[1:]:
-                self.DomainOverlap_scores.append(float(line.split('\t')[2]))
-        except FileNotFoundError:
-            pass
-        try:
-            with open(features_path + '/conservation_scores/' + self.protein_id + '_con.json', 'r') as f:
-                data = json.load(f)
-            for result in data['Conservation']:
-                if 'qfo' in result:
-                    self.qfo_RLC_scores = result['qfo']
-                elif 'vertebrates' in result:
-                    self.vertebrates_RLC_scores = result['vertebrates']
-                elif 'mammalia' in result:
-                    self.mammalia_RLC_scores = result['mammalia']
-                elif 'metazoa' in result:
-                    self.metazoa_RLC_scores = result['metazoa']
-        except FileNotFoundError:
-            pass
+    def read_in_features(self, features_path, conservation_scores_path=None):
+        if features_path:
+            try:
+                with open(features_path + '/IUPred_short/' + self.protein_id + '_iupredshort.txt', 'r') as f:
+                    lines = [line.strip() for line in f.readlines()]
+                for line in lines[1:]:
+                    self.IUPredShort_scores.append(float(line.split('\t')[2]))
+            except FileNotFoundError:
+                pass
+            try:
+                with open(features_path + '/Anchor/' + self.protein_id + '_anchor.txt', 'r') as f:
+                    lines = [line.strip() for line in f.readlines()]
+                for line in lines[1:]:
+                    self.Anchor_scores.append(float(line.split('\t')[2]))
+            except FileNotFoundError:
+                pass
+            try:
+                with open(features_path + '/Domain_overlap/' + self.protein_id + '_domain_overlap.txt', 'r') as f:
+                    lines = [line.strip() for line in f.readlines()]
+                for line in lines[1:]:
+                    self.DomainOverlap_scores.append(float(line.split('\t')[2]))
+            except FileNotFoundError:
+                pass
+
+        # Load conservation scores - try features_path first, then fall back to conservation_scores_path
+        conservation_loaded = False
+        for cons_path in [features_path + '/conservation_scores' if features_path else None, conservation_scores_path]:
+            if cons_path and not conservation_loaded:
+                try:
+                    with open(cons_path + '/' + self.protein_id + '_con.json', 'r') as f:
+                        data = json.load(f)
+                    for result in data['Conservation']:
+                        if 'qfo' in result:
+                            self.qfo_RLC_scores = result['qfo']
+                        elif 'vertebrates' in result:
+                            self.vertebrates_RLC_scores = result['vertebrates']
+                        elif 'mammalia' in result:
+                            self.mammalia_RLC_scores = result['mammalia']
+                        elif 'metazoa' in result:
+                            self.metazoa_RLC_scores = result['metazoa']
+                    conservation_loaded = True
+                except FileNotFoundError:
+                    pass
 
     def calculate_features_scores(self):
         for slim_id, slim_match in self.slim_matches_dict.items():
@@ -336,7 +343,7 @@ class DMIMatch:
         self.missing_feature = None
 
 class InterfaceHandling(BaseInterfaceHandling):
-    def __init__(self, prot_path, slim_type_file, dmi_type_file, smart_domain_types_file, pfam_domain_types_file, smart_domain_matches_json_file, pfam_domain_matches_json_file, features_path, PPI_file=None, network_path=None):
+    def __init__(self, prot_path, slim_type_file, dmi_type_file, smart_domain_types_file, pfam_domain_types_file, smart_domain_matches_json_file, pfam_domain_matches_json_file, features_path, PPI_file=None, network_path=None, conservation_scores_path=None):
         super().__init__(prot_path, PPI_file)
         self.slim_types_dict = {}
         self.dmi_types_dict = {}
@@ -348,6 +355,7 @@ class InterfaceHandling(BaseInterfaceHandling):
         self.pfam_domain_matches_json_file = pfam_domain_matches_json_file
         self.features_path = features_path
         self.network_path = network_path if network_path is not None else self.features_path
+        self.conservation_scores_path = conservation_scores_path
 
     def load_sequences_from_dict(self, sequences_dict):
         for protein_id, sequence in sequences_dict.items():
@@ -495,10 +503,11 @@ class InterfaceHandling(BaseInterfaceHandling):
                 prot_inst.create_slim_matches(dmi_type_inst, slim_type_inst)
 
     def read_in_features_all_proteins(self):
-        if not self.features_path:
+        # Load features even if features_path is not set, as long as conservation_scores_path is available
+        if not self.features_path and not self.conservation_scores_path:
             return
         for prot_id, prot_inst in self.proteins_dict.items():
-            prot_inst.read_in_features(self.features_path)
+            prot_inst.read_in_features(self.features_path, self.conservation_scores_path)
 
     def calculate_features_scores_all_proteins(self):
         for prot_id, prot_inst in self.proteins_dict.items():

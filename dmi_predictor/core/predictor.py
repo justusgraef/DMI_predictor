@@ -79,6 +79,7 @@ class DMIWorkflow:
             pfam_domain_matches_json_file=str(self.config.interpro_pfam_file),
             features_path=str(self.features_dir) if self.features_dir else None,
             network_path=str(self.features_dir) if self.features_dir else None,
+            conservation_scores_path=str(self.config.conservation_scores_dir) if self.config.conservation_scores_dir.exists() else None,
         )
         iface.load_sequences_from_dict(sequences)
         iface.set_protein_pairs(ppi_pairs)
