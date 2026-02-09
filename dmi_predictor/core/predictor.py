@@ -69,6 +69,17 @@ class DMIWorkflow:
             print(msg, flush=True)
 
     def _init_interface(self, sequences: Dict[str, str], ppi_pairs: List[Tuple[str, str]]):
+        # Log conservation scores status
+        cons_dir = self.config.conservation_scores_dir
+        cons_exists = cons_dir.exists() if cons_dir else False
+        cons_path = str(cons_dir) if cons_exists else None
+        self._log(f"Conservation scores directory: {cons_dir}")
+        self._log(f"Conservation scores directory exists: {cons_exists}")
+        if cons_exists:
+            self._log(f"Conservation scores WILL be loaded from: {cons_path}")
+        else:
+            self._log("Conservation scores will NOT be loaded (directory does not exist)")
+
         iface = InterfaceHandling(
             prot_path="",
             slim_type_file=str(self.config.elm_classes_file),
@@ -79,7 +90,7 @@ class DMIWorkflow:
             pfam_domain_matches_json_file=str(self.config.interpro_pfam_file),
             features_path=str(self.features_dir) if self.features_dir else None,
             network_path=str(self.features_dir) if self.features_dir else None,
-            conservation_scores_path=str(self.config.conservation_scores_dir) if self.config.conservation_scores_dir.exists() else None,
+            conservation_scores_path=cons_path,
         )
         iface.load_sequences_from_dict(sequences)
         iface.set_protein_pairs(ppi_pairs)

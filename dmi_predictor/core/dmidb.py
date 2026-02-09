@@ -116,10 +116,12 @@ class Protein(BaseProtein):
 
         # Load conservation scores - try features_path first, then fall back to conservation_scores_path
         conservation_loaded = False
-        for cons_path in [features_path + '/conservation_scores' if features_path else None, conservation_scores_path]:
+        paths_to_try = [features_path + '/conservation_scores' if features_path else None, conservation_scores_path]
+        for cons_path in paths_to_try:
             if cons_path and not conservation_loaded:
+                full_path = cons_path + '/' + self.protein_id + '_con.json'
                 try:
-                    with open(cons_path + '/' + self.protein_id + '_con.json', 'r') as f:
+                    with open(full_path, 'r') as f:
                         data = json.load(f)
                     for result in data['Conservation']:
                         if 'qfo' in result:
@@ -217,10 +219,16 @@ class SLiMMatch:
         else:
             response = None
         
-        if not response:
-            self._set_cons_problem()
-        else:
+        # Determine positions to use for conservation score calculation
+        if response:
+            # Use ELM-defined positions (functionally important positions within the motif)
             defined_positions = [start + (ind - 1) for ind in response.get("indexes", [])]
+        else:
+            # Fallback: use all positions in the SLiM match range when ELM API is unavailable
+            defined_positions = list(range(start, end + 1))
+
+        # Calculate conservation features if we have positions and conservation scores
+        if defined_positions:
             for i, cons_type in enumerate([
                 self.prot_inst.qfo_RLC_scores,
                 self.prot_inst.vertebrates_RLC_scores,
