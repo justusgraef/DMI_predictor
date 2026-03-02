@@ -71,6 +71,20 @@ dmi-predict predict \
   --verbose
 ```
 
+### Variant mapping
+
+Map curated protein variants (from the EBI Proteins API) onto predicted DMI interface windows to identify variants overlapping SLiM or domain positions:
+
+```bash
+dmi-predict map-variants \
+  --input results.tsv \
+  --output mapped_variants.csv \
+  --dmi-score-cutoff 0.7 \
+  --verbose
+```
+
+`--input` is the TSV output from `dmi-predict predict`. `--dmi-score-cutoff` pre-filters to high-confidence predictions before querying the API. Output is a CSV with one row per variant–window overlap, carrying all DMI result columns plus variant annotation columns (`position`, `wild_type`, `mutant`, `consequence_type`, `clinical_significance`, `xrefs`). A `window_type` column indicates whether the variant falls in the `SLiM` or `Domain` window of the predicted interface.
+
 ### Parallel processing (HPC / multi-core)
 
 Both `precompute-features` and `predict` support `--num-workers` for parallel execution:
