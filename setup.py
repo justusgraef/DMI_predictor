@@ -8,7 +8,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="dmi-predictor",
-    version="1.0.0",
+    version="1.1.0",
     author="Chop Yan Lee, Justus Graef",
     description="A tool to predict domain-motif interfaces (DMI) in protein-protein interactions",
     long_description=long_description,

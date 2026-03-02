@@ -393,5 +393,73 @@ def precompute_features(fasta_dir, fasta_file, output_dir, force_cpu, verbose, a
         sys.exit(1)
 
 
+@cli.command()
+@click.option(
+    '--input',
+    type=click.Path(exists=True),
+    required=True,
+    help='Path to DMI prediction results TSV (output of dmi-predict predict).',
+)
+@click.option(
+    '--output',
+    type=click.Path(),
+    required=True,
+    help='Output CSV file for mapped variants.',
+)
+@click.option(
+    '--dmi-score-cutoff',
+    type=float,
+    default=None,
+    help='Only process rows with DMIMatchScore above this value (e.g. 0.7).',
+)
+@click.option(
+    '--delay',
+    type=float,
+    default=0.1,
+    help='Delay in seconds between EBI API requests (default: 0.1).',
+)
+@click.option(
+    '--verbose',
+    is_flag=True,
+    help='Enable verbose output.',
+)
+def map_variants(
+    input: str,
+    output: str,
+    dmi_score_cutoff: float,
+    delay: float,
+    verbose: bool,
+):
+    """
+    Map curated protein variants onto predicted domain-motif interface windows.
+
+    Fetches variants from the EBI Proteins API for each protein in the DMI
+    results and reports which variants fall within SLiM match or domain match
+    positions.
+
+    Example usage:
+
+        dmi-predict map-variants --input results.tsv --output mapped_variants.csv --dmi-score-cutoff 0.7
+    """
+    from dmi_predictor.core.variant_mapping import run_variant_mapping
+    try:
+        run_variant_mapping(
+            input_file=input,
+            output_file=output,
+            dmi_score_cutoff=dmi_score_cutoff,
+            delay=delay,
+            verbose=verbose,
+        )
+    except ValueError as e:
+        click.echo(click.style(f"✗ Error: {e}", fg='red'), err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(click.style(f"✗ Unexpected error: {e}", fg='red'), err=True)
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
 if __name__ == '__main__':
     cli()
