@@ -92,6 +92,25 @@ def cli():
     is_flag=True,
     help='Skip ELM network calls (use cached/none defined-positions). Useful for offline runs.',
 )
+@click.option(
+    '--update-interpro-domains',
+    is_flag=True,
+    help='After prediction, query the InterPro REST API to update DomainMatch positions '
+         'to current coordinates. Original positions are kept in DomainMatch1_DMI / DomainMatch2_DMI.',
+)
+@click.option(
+    '--interpro-cache',
+    type=click.Path(),
+    default=None,
+    help='Path to InterPro lookup cache JSON (read/written during --update-interpro-domains). '
+         'Defaults to interpro_cache.json alongside the output file.',
+)
+@click.option(
+    '--interpro-api-delay',
+    type=float,
+    default=0.25,
+    help='Seconds between InterPro API calls when --update-interpro-domains is set (default: 0.25).',
+)
 def predict(
     ppi_file: str,
     fasta_dir: Optional[str],
@@ -105,15 +124,24 @@ def predict(
     verbose: bool,
     num_workers: int,
     skip_elm: bool,
+    update_interpro_domains: bool,
+    interpro_cache: Optional[str],
+    interpro_api_delay: float,
 ):
     """
     Predict domain-motif interfaces (DMI) for protein-protein interactions.
+
+    Optionally correct domain positions to current InterPro coordinates with
+    --update-interpro-domains. Original positions are preserved in
+    DomainMatch1_DMI / DomainMatch2_DMI columns.
 
     Example usage:
 
         dmi-predict predict --ppi-file interactions.tsv --fasta-dir ./sequences/ --output results.tsv
 
-        dmi-predict predict --ppi-file interactions.tsv --fasta-files prot1.fasta prot2.fasta --output results.json --output-format json
+        dmi-predict predict --ppi-file interactions.tsv --fasta-files prot1.fasta prot2.fasta --output results.tsv --update-interpro-domains
+
+        dmi-predict predict --ppi-file interactions.tsv --fasta-dir ./sequences/ --output results.tsv --update-interpro-domains --interpro-cache /path/to/cache.json
     """
     try:
         if verbose:
@@ -191,6 +219,28 @@ def predict(
 
         if verbose:
             click.echo(f"Configuration: {config.to_dict()}")
+
+        # Optionally correct domain positions via InterPro
+        if update_interpro_domains:
+            if output_format != "tsv":
+                click.echo(
+                    click.style(
+                        "⚠ --update-interpro-domains only supports TSV output; skipping.",
+                        fg="yellow",
+                    ),
+                    err=True,
+                )
+            else:
+                if verbose:
+                    click.echo("Updating domain positions via InterPro REST API ...")
+                from dmi_predictor.core.domain_correction import run_domain_correction
+                run_domain_correction(
+                    input_file=output,
+                    output_file=output,
+                    cache_file=interpro_cache,
+                    api_delay=interpro_api_delay,
+                    verbose=verbose,
+                )
 
     except FileNotFoundError as e:
         click.echo(click.style(f"✗ Error: {e}", fg='red'), err=True)

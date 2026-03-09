@@ -71,6 +71,22 @@ dmi-predict predict \
   --verbose
 ```
 
+### Domain position correction
+
+The DMI predictor uses bundled InterPro domain annotations (January 2021). For proteins whose canonical sequence length has changed since then, the domain boundary positions in the output may be mismatched. Use `--update-interpro-domains` on the `predict` command to query the current InterPro REST API and overwrite `DomainMatch1` / `DomainMatch2` with up-to-date coordinates. Original positions are preserved in `DomainMatch1_DMI` / `DomainMatch2_DMI`.
+
+```bash
+dmi-predict predict \
+  --ppi-file interactions.tsv \
+  --fasta-files sequences.fasta \
+  --features-dir features \
+  --output results.tsv \
+  --update-interpro-domains \
+  --verbose
+```
+
+A JSON cache file (`interpro_cache.json` by default, alongside the output) stores API results so repeated runs do not re-query the same proteins. A pre-existing cache can be supplied with `--interpro-cache /path/to/cache.json`. The API request rate can be controlled with `--interpro-api-delay` (default: 0.25 s).
+
 ### Variant mapping
 
 Map curated protein variants (from the EBI Proteins API) onto predicted DMI interface windows to identify variants overlapping SLiM or domain positions:
