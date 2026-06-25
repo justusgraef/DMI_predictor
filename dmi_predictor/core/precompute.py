@@ -44,11 +44,13 @@ def _domain_overlap_scores(
                 if result.get('metadata', {}).get('accession') == protein_id:
                     for entry in result.get('entry_subset', []):
                         entry_accession = entry.get('accession', '')
-                        # Skip if this HMM is marked as Motif/Disordered
-                        if entry_accession in motif_disordered_hmms:
-                            if motif_disordered_hmms[entry_accession] != 'Motif':
-                                # It's Disordered (Pfam) or Motif (SMART), skip
-                                continue
+                        # SMART "Motif" HMMs detect motifs, not folded domains, so
+                        # residues under them must NOT count as domain overlap.
+                        # Pfam "Disordered" HMMs are kept (counted as overlap) to
+                        # reproduce the original feature definition the RF model was
+                        # trained on (scripts/.../precompute_IUPred_Anchor_DomainOverlap.py).
+                        if motif_disordered_hmms.get(entry_accession) == 'Motif':
+                            continue
                         for loc in entry.get('entry_protein_locations', []):
                             for frag in loc.get('fragments', []):
                                 start = int(frag.get('start', 1))

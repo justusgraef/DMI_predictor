@@ -241,7 +241,7 @@ class SLiMMatch:
                         if int(pos) in defined_positions:
                             defined_positions_cons_scores.append(score)
                     if any(defined_positions_cons_scores):
-                        pmotif = np.product(defined_positions_cons_scores)
+                        pmotif = np.prod(defined_positions_cons_scores)
                         lnpmotif = -np.log(pmotif)
                         sigmotif = sc.gammaincc(len(defined_positions_cons_scores), lnpmotif)
                         meanRLCprob = np.mean(defined_positions_cons_scores)

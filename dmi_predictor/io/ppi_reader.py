@@ -92,6 +92,11 @@ class PPIReader:
 
         except pd.errors.ParserError as e:
             raise ValueError(f"Error parsing PPI file {filepath}: {e}")
+        except ValueError:
+            # Deliberate validation failures (wrong delimiter -> too few columns,
+            # no valid pairs, etc.) must stay ValueError so read_ppi_file_generic
+            # can catch them and fall back to the next delimiter.
+            raise
         except Exception as e:
             raise IOError(f"Error reading PPI file {filepath}: {e}")
 
@@ -117,7 +122,7 @@ class PPIReader:
         for delimiter in delimiters:
             try:
                 return PPIReader.read_ppi_file(filepath, delimiter=delimiter)
-            except (ValueError, pd.errors.ParserError):
+            except (ValueError, pd.errors.ParserError, OSError):
                 continue
 
         raise ValueError(
