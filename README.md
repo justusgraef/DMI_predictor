@@ -87,6 +87,30 @@ dmi-predict predict \
 
 A JSON cache file (`interpro_cache.json` by default, alongside the output) stores API results so repeated runs do not re-query the same proteins. A pre-existing cache can be supplied with `--interpro-cache /path/to/cache.json`. The API request rate can be controlled with `--interpro-api-delay` (default: 0.25 s).
 
+### Conservation score re-alignment
+
+Conservation scores (`conservation_scores/<UniProt>_con.json`) are stored keyed by **absolute residue position**, computed against the sequences that were canonical when the score library was built. If a protein's UniProt sequence is later updated (e.g. a new isoform that adds N-terminal residues), position *N* no longer refers to the same residue, so `predict` silently reads misaligned conservation and mis-scores that protein's DMIs — the conservation features (`qfo_RLC`, `vertebrates_RLC`, …) feed the random-forest score, so a shift of even a few residues can push real hits below the cutoff.
+
+**When to use:** whenever your input sequences differ from the ones the conservation library was built against (a sequence "data freeze" update). This is the conservation-score counterpart of `--update-interpro-domains`; both re-align position-indexed precomputed data to the current sequences.
+
+Use `--remap-conservation` on the `predict` command, together with `--conservation-ref-fasta` pointing at the FASTA the library was built against (the "old" sequences):
+
+```bash
+dmi-predict predict \
+  --ppi-file interactions.tsv \
+  --fasta-files sequences.fasta \
+  --features-dir features \
+  --conservation-scores-dir /path/to/conservation_scores \
+  --output results.tsv \
+  --remap-conservation \
+  --conservation-ref-fasta old_sequences.fasta \
+  --verbose
+```
+
+For each protein whose sequence changed, existing per-residue scores are relocated to their new coordinates via an old→new sequence alignment (handles N-/C-terminal extensions, trims, and internal indels). Corrected files are written into `<features-dir>/conservation_scores/`, which the loader prefers over the shared library **per protein** — so only re-aligned proteins are overridden and the source library is left untouched. `--features-dir` is therefore required with this flag.
+
+**Note:** this re-uses existing scores; it does *not* regenerate conservation from orthologs. Residues that exist only in the new sequence (e.g. a brand-new N-terminus) are left unscored and fall back to median imputation, exactly as any protein lacking conservation data. To obtain true conservation for genuinely new residues, rerun the original conservation pipeline.
+
 ### Variant mapping
 
 Map curated protein variants (from the EBI Proteins API) onto predicted DMI interface windows to identify variants overlapping SLiM or domain positions:
