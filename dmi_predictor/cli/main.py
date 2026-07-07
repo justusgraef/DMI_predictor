@@ -111,6 +111,22 @@ def cli():
     default=0.25,
     help='Seconds between InterPro API calls when --update-interpro-domains is set (default: 0.25).',
 )
+@click.option(
+    '--remap-conservation',
+    is_flag=True,
+    default=False,
+    help='Re-align conservation scores to the input sequences before predicting. '
+         'For any protein whose sequence differs from the reference the conservation '
+         'library was built against, existing per-residue scores are relocated to their '
+         'new coordinates. Requires --conservation-ref-fasta and --features-dir.',
+)
+@click.option(
+    '--conservation-ref-fasta',
+    type=click.Path(exists=True),
+    default=None,
+    help='FASTA the conservation-score library was built against (the "old" sequences). '
+         'Required when --remap-conservation is set.',
+)
 def predict(
     ppi_file: str,
     fasta_dir: Optional[str],
@@ -127,6 +143,8 @@ def predict(
     update_interpro_domains: bool,
     interpro_cache: Optional[str],
     interpro_api_delay: float,
+    remap_conservation: bool,
+    conservation_ref_fasta: Optional[str],
 ):
     """
     Predict domain-motif interfaces (DMI) for protein-protein interactions.
@@ -134,6 +152,10 @@ def predict(
     Optionally correct domain positions to current InterPro coordinates with
     --update-interpro-domains. Original positions are preserved in
     DomainMatch1_DMI / DomainMatch2_DMI columns.
+
+    Optionally re-align conservation scores to the input sequences with
+    --remap-conservation (plus --conservation-ref-fasta), for proteins whose
+    UniProt sequence changed since the conservation library was built.
 
     Example usage:
 
@@ -200,6 +222,32 @@ def predict(
             click.echo(
                 f"Found sequences for {len(sequences)} proteins "
                 f"({len(unique_proteins - set(sequences.keys()))} missing)"
+            )
+
+        # Optionally re-align conservation scores to the input sequences.
+        # Corrected files are written into <features-dir>/conservation_scores, which
+        # the conservation loader prefers over the shared library (per protein), so
+        # only re-aligned proteins are overridden and the source library is untouched.
+        if remap_conservation:
+            if not conservation_ref_fasta:
+                raise ValueError(
+                    "--remap-conservation requires --conservation-ref-fasta "
+                    "(the FASTA the conservation library was built against)."
+                )
+            if not features_dir:
+                raise ValueError(
+                    "--remap-conservation requires --features-dir; corrected files are "
+                    "written to <features-dir>/conservation_scores."
+                )
+            if verbose:
+                click.echo("Re-aligning conservation scores to input sequences ...")
+            from dmi_predictor.core.conservation_remap import run_conservation_remap
+            run_conservation_remap(
+                reference_fasta=conservation_ref_fasta,
+                current_sequences=sequences,
+                cons_dir=str(config.conservation_scores_dir),
+                out_dir=str(Path(features_dir) / "conservation_scores"),
+                verbose=verbose,
             )
 
         # Run prediction pipeline (core workflow)
